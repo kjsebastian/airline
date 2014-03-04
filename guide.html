@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Airline Data Analysis by kjsebastian</title>
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+    <script src="javascripts/respond.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <!--[if lt IE 8]>
+    <link rel="stylesheet" href="stylesheets/ie.css">
+    <![endif]-->
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+  </head>
+  <body>
+      <div id="header">
+        <nav>
+          <li class="fork"><a href="https://github.com/kjsebastian/airline">View On GitHub</a></li>
+          <li class="downloads"><a href="/guide.html">GUIDE</a></li>
+        </nav>
+      </div><!-- end header -->
+
+    <div class="wrapper">
+
+      <section>
+        <div id="title">
+          <h1>Airline Data Analysis</h1>
+          <p></p>
+          <hr>
+          <span class="credits left">Project maintained by <a href="https://github.com/kjsebastian">kjsebastian</a></span>
+        </div>
+
+        <h2>Data Used</h2>
+        <p>The data that I've used for this assignment can be found from <a href="http://stat-computing.org/dataexpo/2009/the-data.html">Statistical Computing - Data Expo</a></p>
+        <p>The specific csv file is for the year <a href="http://stat-computing.org/dataexpo/2009/2008.csv.bz2">2008</a> which amounts to 650mb in size</p>
+
+        <h2>The Problem</h2>
+        <p>Given the dataset above, find the <strong>minium</strong>, <strong>maximum</strong> and <strong>total</strong> departure delays happenned at each airport during the year</p>
+
+        <h2>Method</h2>
+        <p>I've chosen to use <a href="http://aws.amazon.com/elasticmapreduce">Amazon Elastic MapReduce</a> to solve this issue. Amazon EMR was chosen because we have multiple data points for every airport during the course of a year. Using <a href="http://hadoop.apache.org">Hadoop</a> mapreduce framework in EMR, we will be able to slice down the big data so that only what is required to us remains behind.</p>
+
+        <h2>Steps</h2>
+        <p>We need few things before we can run a cluster in Amazon EMR.</p>
+        <ol>
+          <li>Input Data (Download from the above link)</li>
+          <li>Code executables for mapping and reducing the input</li>
+          <li>EMR Cluster</li>
+        </ol>
+        <p>We will go through them one by one</p>
+
+        <h3>Setup Amazon S3</h3>
+        <p>In order to use Amazon EMR, we have to use Amazon's S3 storage service to store our input data, code executables, runtime logs and data output. Here's how you do it.</p>
+        <ul>
+          <li>Sign up for <a href="https://aws.amazon.com/s3/">Amazon S3</a></li>
+          <li>Create a bucket with a unique name</li>
+          <li>Create two folders in the bucket namely "code" and "data"</li>
+          <li>Upload your input data (the big evil csv file) to the data folder</li>
+        </ul>
+
+        <h3>Code</h3>
+        <p>We need some logic for our mapreduce to work. We need a mapper which will map all the keys and values as required. And then the reducer to reduce these repeated values to a single value based on our logic. Below is an example mapper from the wordcount sample in Amazon</p>
+        <p><pre><code>
+#!/usr/bin/python
+import sys
+import re
+
+def main(argv):
+ line = sys.stdin.readline()
+ pattern = re.compile("[a-zA-Z][a-zA-Z0-9]*")
+ try:
+   while line:
+     for word in  pattern.findall(line):
+       print  "LongValueSum:" + word.lower() + "\t" + "1"
+     line =  sys.stdin.readline()
+ except "end of file":
+   return None
+if __name__ == "__main__":
+ main(sys.argv)
+        </code></pre></p>
+        <p>What we require in our case though is to parse a csv file rather than a text file as shown in the above example. For this a little bit of research is required. (Hint: python has a native csv module which can be used by just <pre><code>import csv</code></pre></p>
+
+        <p>Once we have written our mapper and reducer code, upload mapper.py and reducer.py to the "code" folder we created earlier.</p>
+
+        <h3>Setup EMR cluster</h3>
+        <p>Here is the interesting part. We will setup our cluster and let it run on the input data. Follow these steps</p>
+        <ul>
+          <li>Sign up for <a href="http://aws.amazon.com/elasticmapreduce"> Amazon EMR</a></li>
+          <li>Go to the <a href="https://console.aws.amazon.com/elasticmapreduce/vnext/home?region=ap-southeast-1">EMR AWS Console</a></li>
+          <li>Click Create cluster</li>
+          <li>Enter an appropriate name and specify a logs folder. The logs folder will be automatically created.</li>
+          <li>In the software configuration section we can remove Hive and Pig if they are selected by default. We are not using those</li>
+          <li>In the hardware configuration section choose a master instance to allocate jobs.</li>
+          <li>Also choose how many core instances will be required. Core instances does the computing. So this will depend on the size of the data and complexity of our mapreduce logic. I used a m1.medium for master and 2 c1.xlarge instances for the core since we were given amazon credits.</li>
+          <li>Now we have to choose our data and code. In the section called "Steps", click Add a step and choose "Streaming Program". Click Configure and Add</li>
+          <li>In the next window, input the locations of our data, mapper and reducer. This will look like "s3n://your-bucket-name/data/" for data and "s3n://your-bucket-name/code/mapper.py" for the code.</li>
+          <li>Choose an output folder. This will also be automatically created.</li>
+          <li>Click Add then Create Cluster</li>
+        </ul>
+
+        <p>Now we can see that it is provisioning EC2 instances and starting them up. Wait for a while for it to complete the task. You can see the instance details in your <a href="https://console.aws.amazon.com/ec2/v2/home?region=ap-southeast-1">EC2 Console.</a></p>
+
+        <h2>Output Data</h2>
+        <p>If there are any errors, in the application, this can be checked by looking up the logs folder we setup previously. Otherwise the output will be generated in the previously specified folder.</p>
+        <p>In my case, I have generated my output in JSON form (hint: use python dictonaries and json module to manipulate the output data in reducer). This is just for easier parsing when later used with a charting library in javascript for visulaization.</p>
+        <p>The samples in the <a href="/home.html">home</a> page are an example for this.</p>
+        </section>
+    </div>
+  </body>
+</html>
